@@ -68,6 +68,106 @@ cobc -info
 
 GnuCOBOL should report VBISAM as the indexed file handler.
 
+### VBISAM runtime loading on macOS
+
+GnuCOBOL 4 loads the underlying ISAM implementation dynamically. Because of this, VBISAM currently does not work out of the box on macOS when installed through Homebrew.
+
+Inspecting `libcob.dylib` with:
+
+```bash
+otool -L "$(brew --prefix gnucobol-svn)/lib/libcob.dylib"
+```
+
+shows that `libcob` is not directly linked against the VBISAM library:
+
+```text
+libcob.dylib:
+    /opt/homebrew/opt/gnucobol-svn/lib/libcob.8.dylib
+    /opt/homebrew/opt/gmp/lib/libgmp.10.dylib
+    /opt/homebrew/opt/readline/lib/libreadline.8.dylib
+    /opt/homebrew/opt/gettext/lib/libintl.8.dylib
+    /usr/lib/libiconv.2.dylib
+    /opt/homebrew/opt/libxml2/lib/libxml2.16.dylib
+    /opt/homebrew/opt/json-c/lib/libjson-c.5.dylib
+    /opt/homebrew/opt/ncurses/lib/libncursesw.6.dylib
+    /opt/homebrew/opt/ncurses/lib/libpanelw.6.dylib
+    /System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation
+    /System/Library/Frameworks/CoreServices.framework/Versions/A/CoreServices
+    /usr/lib/libSystem.B.dylib
+```
+
+Instead, GnuCOBOL builds a separate `libcobvb.dylib` module which acts as the interface between `libcob` and VBISAM.
+
+This can be verified with:
+
+```bash
+otool -L "$(brew --prefix gnucobol-svn)/lib/libcobvb.dylib"
+```
+
+which shows, among other dependencies:
+
+```text
+libcobvb.dylib:
+    /opt/homebrew/opt/gnucobol-svn/lib/libcobvb.1.dylib
+    /opt/homebrew/Cellar/gnucobol-svn/HEAD-5690/lib/libcob.8.dylib
+    /opt/homebrew/opt/vbisam/lib/libvbisam.1.dylib
+    /opt/homebrew/opt/ncurses/lib/libpanelw.6.dylib
+    /usr/lib/libSystem.B.dylib
+```
+
+The important part is:
+
+```text
+/opt/homebrew/opt/vbisam/lib/libvbisam.1.dylib
+```
+
+Thus, the runtime dependency chain is effectively:
+
+```text
+libcob.dylib
+      |
+      |  dynamically loads
+      v
+libcobvb.dylib
+      |
+      |  linked against
+      v
+libvbisam.1.dylib
+```
+
+The current problem on macOS is that `libcob` attempts to dynamically load the module simply as:
+
+```text
+libcobvb.dylib
+```
+
+macOS does not automatically search the Homebrew GnuCOBOL library directory for this file. This results in an error such as:
+
+```text
+libcob: error: I/O routine VB-ISAM cannot be loaded:
+dlopen(libcobvb.dylib, ...): no such file
+
+libcob: error: ERROR I/O routine VBISAM is not present
+```
+
+#### Temporary workaround
+
+Until the GnuCOBOL `libcob` source or its macOS library loading mechanism is adjusted, the GnuCOBOL library directory can be added to the dynamic loader search path:
+
+```bash
+DYLD_LIBRARY_PATH="$(brew --prefix gnucobol-svn)/lib" ./seq2idx
+```
+
+Alternatively, for the current shell:
+
+```bash
+export DYLD_LIBRARY_PATH="$(brew --prefix gnucobol-svn)/lib"
+```
+
+Programs using VBISAM can then be started normally.
+
+This is currently intended as a temporary workaround. The preferred long-term solution is to adjust the GnuCOBOL runtime so that `libcobvb.dylib` can be located correctly on macOS without requiring `DYLD_LIBRARY_PATH`.
+
 ---
 
 ## esqlOC
