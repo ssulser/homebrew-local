@@ -10,17 +10,18 @@ jobs:
   test-bot:
     strategy:
       matrix:
-        os: [ macos-15-intel, macos-26 ]
-        include:
-          - os: ubuntu-latest
-            container: ghcr.io/homebrew/brew:main
+        os:
+          - macos-15-intel
+          - macos-26
+
     runs-on: ${{ matrix.os }}
-    container: ${{ matrix.container }}
+
     permissions:
       actions: read
       checks: read
       contents: read
       pull-requests: read
+
     steps:
       - name: Set up Homebrew
         id: set-up-homebrew
@@ -40,6 +41,7 @@ jobs:
       - run: brew test-bot --only-setup
 
       - run: brew test-bot --only-tap-syntax
+
       - run: brew test-bot --only-formulae
         if: github.event_name == 'pull_request'
 
